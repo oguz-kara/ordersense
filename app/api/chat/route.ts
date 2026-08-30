@@ -1,6 +1,9 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
-import { retrieveContext, RAGSource } from "@/app/lib/utils";
+import { RAGSource } from "@/app/lib/utils";
+import { retrieveContext } from "@/app/lib/kb";
+import { findOrder, guardrailBlock, orderContext } from "@/app/lib/shop";
+import { escalate, isMock } from "@/app/lib/escalate";
 import crypto from "crypto";
 import customerSupportCategories from "@/app/lib/customer_support_categories.json";
 
@@ -82,6 +85,35 @@ export async function POST(req: Request) {
     }),
   ).slice(0, MAX_DEBUG_LENGTH);
 
+  // ---- OrderSense: order lookup + hard guardrails (BEFORE any AI call) ----
+  const order = await findOrder(latestMessage);
+  if (order) {
+    const blocked = guardrailBlock(order);
+    if (blocked) {
+      const gorgias = await escalate({
+        reason: blocked,
+        summary: `Customer asked about ${order.orderNumber}; agent did not answer (guardrail).`,
+        source: "guardrail",
+        orderNumber: order.orderNumber,
+      });
+      return new Response(
+        JSON.stringify({
+          id: crypto.randomUUID(),
+          thinking: `Guardrail: ${blocked} — the model was never called for this order.`,
+          response:
+            "I'm connecting you with a member of our support team who can help with this order directly — one moment please.",
+          user_mood: "neutral",
+          suggested_questions: [],
+          debug: { context_used: false },
+          matched_categories: ["order_status"],
+          redirect_to_agent: { should_redirect: true, reason: `${blocked} · ${gorgias}` },
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } },
+      );
+    }
+  }
+  const orderCtx = order ? orderContext(order) : "";
+
   // Initialize variables for RAG retrieval
   let retrievedContext = "";
   let isRagWorking = false;
@@ -131,17 +163,20 @@ export async function POST(req: Request) {
   `
     : "";
 
-  // Change the system prompt company for your use case
-  const systemPrompt = `You are acting as an Anthropic customer support assistant chatbot inside a chat window on a website. You are chatting with a human user who is asking for help about Anthropic's products and services. When responding to the user, aim to provide concise and helpful responses while maintaining a polite and professional tone.
+  const systemPrompt = `You are the customer support assistant for Loura Apparel, an EU-based clothing brand (chat widget, WhatsApp and Instagram DM). Answer in the customer's language (English, German or French). Be concise, warm and professional.
 
-  To help you answer the user's question, we have retrieved the following information for you. It may or may not be relevant (we are using a RAG pipeline to retrieve this information):
-  ${isRagWorking ? `${retrievedContext}` : "No information found for this query."}
+  HARD RULES (non-negotiable):
+  - Never promise or initiate a refund. You may only state the return policy and eligibility; refunds are confirmed by the team after the return arrives.
+  - Only state order facts that appear in ORDER CONTEXT below. If there is no ORDER CONTEXT, ask for the order number (format LA-12345) or the email used at checkout.
+  - If the customer says a delivered order did not arrive, or is clearly angry, set redirect_to_agent with a short reason — a human takes over in the same thread.
+  - Do not answer questions unrelated to Loura Apparel orders, products or policies; redirect instead.
 
-  Please provide responses that only use the information you have been given. If no information is available or if the information is not relevant for answering the question, you can redirect the user to a human agent for further assistance.
+  ${orderCtx ? orderCtx : "ORDER CONTEXT: none — no order identified in this conversation yet."}
+
+  KNOWLEDGE BASE (retrieved for this query; use only this for policy answers):
+  ${isRagWorking ? `${retrievedContext}` : "No policy information found for this query."}
 
   ${categoriesContext}
-
-  If the question is unrelated to Anthropic's products and services, you should redirect the user to a human agent.
 
   You are the first point of contact for the user and should try to resolve their issue or provide relevant information. If you are unable to help the user or if the user explicitly asks to talk to a human, you can redirect them to a human agent for further assistance.
   
@@ -213,21 +248,47 @@ export async function POST(req: Request) {
     console.log(`🚀 Query Processing`);
     measureTime("Claude Generation Start");
 
+    if (isMock()) {
+      // Deterministic response so the UI is fully workable without credits.
+      const mockResponse = {
+        id: crypto.randomUUID(),
+        thinking: "[MOCK] No model call (ORDERSENSE_MOCK=1). Composed from retrieval + order context.",
+        response: order
+          ? `[MOCK] ${orderCtx.split("\n")[3] ?? ""} — happy to help with anything else about order ${order.orderNumber}.`
+          : isRagWorking
+            ? `[MOCK] Based on our policy: ${retrievedContext.slice(0, 180)}…`
+            : "[MOCK] Could you share your order number (LA-12345) or checkout email?",
+        user_mood: "neutral" as const,
+        suggested_questions: ["Where is my order?", "How do returns work?", "What sizes do you carry?"],
+        debug: { context_used: isRagWorking },
+        matched_categories: order ? ["order_status"] : [],
+        redirect_to_agent: { should_redirect: false },
+      };
+      const mockApi = new Response(JSON.stringify(mockResponse), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+      if (ragSources.length > 0) {
+        mockApi.headers.set("x-rag-sources", sanitizeHeaderValue(JSON.stringify(ragSources)));
+      }
+      mockApi.headers.set("X-Debug-Data", sanitizeHeaderValue(debugData));
+      return mockApi;
+    }
+
     const anthropicMessages = messages.map((msg: any) => ({
       role: msg.role,
       content: msg.content,
     }));
 
-    anthropicMessages.push({
-      role: "assistant",
-      content: "{",
-    });
-
+    // NOTE: the base repo prefilled an assistant "{" turn; current Claude
+    // models reject assistant prefill, so we instruct JSON-only instead.
     const response = await anthropic.messages.create({
-      model: model,
+      model: process.env.ORDERSENSE_MODEL ?? "claude-sonnet-5",
       max_tokens: 1000,
       messages: anthropicMessages,
-      system: systemPrompt,
+      system:
+        systemPrompt +
+        "\n\nRespond ONLY with the JSON object — no prose before or after it.",
       temperature: 0.3,
     });
 
@@ -235,10 +296,11 @@ export async function POST(req: Request) {
     console.log("✅ Message generation completed");
 
     // Extract text content from the response
-    const textContent = "{" + response.content
+    const textContent = response.content
       .filter((block): block is Anthropic.TextBlock => block.type === "text")
       .map((block) => block.text)
-      .join(" ");
+      .join(" ")
+      .trim();
 
     // Parse the JSON response
     let parsedResponse;
@@ -260,6 +322,12 @@ export async function POST(req: Request) {
     if (responseWithId.redirect_to_agent?.should_redirect) {
       console.log("🚨 AGENT REDIRECT TRIGGERED!");
       console.log("Reason:", responseWithId.redirect_to_agent.reason);
+      await escalate({
+        reason: responseWithId.redirect_to_agent.reason ?? "model requested handoff",
+        summary: `Last message: ${String(latestMessage).slice(0, 200)}`,
+        source: "model",
+        orderNumber: order?.orderNumber,
+      });
     }
 
     // Prepare the response object

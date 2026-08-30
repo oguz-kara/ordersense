@@ -22,22 +22,22 @@ model ID'leri güncel; Shopify/Gorgias katmanı bizim.
 
 ## Kapsam
 
-**v1 — çekirdek (mock'ta uçtan uca)**
-- [ ] Bedrock'u söküp yerel retrieval: `data/policies.md` bölümleri
-      (v1: başlık-bazlı bölümleme + anahtar kelime eşleme; pgvector v2)
-- [ ] `lib/shopify.ts` mock mağaza: e-posta/sipariş no ile arama
-      (`data/orders.json`); "don't panic" eşik mantığı (yurtiçi 5 /
-      yurtdışı 12 iş günü)
-- [ ] Korkuluklar (kod seviyesinde, prompt'a ek): `fraud_risk`/`refunded`/
-      `cancelled` bayraklı siparişte cevap YOK → doğrudan eskalasyon;
-      iade SÖZÜ verilmez (yalnız uygunluk bilgisi); her eylem sipariş no
-      ile loglanır
-- [ ] Eskalasyon: öfke tespiti (tabanda var) veya "delivered ama gelmedi"
-      → `lib/escalate.ts`: Gorgias ticket simülasyonu + Slack webhook
-      (Prequal deseni) + `ai-escalated` kaydı
-- [ ] Model: PREQUAL/BILLPILOT deseni — `ORDERSENSE_MODEL ?? claude-sonnet-5`;
-      `ORDERSENSE_MOCK=1` deterministik yanıt (kredisiz UI geliştirme)
-- [ ] Çok dil: EN/DE/FR (persona dili; sistem promptunda)
+**v1 — çekirdek (2026-08-30 tamamlandı, mock'ta uçtan uca doğrulandı)**
+- [x] Bedrock söküldü → `app/lib/kb.ts`: policies.md başlık bölümleme +
+      anahtar kelime skorlama; RAGSource arayüzü korundu (sağ panel çalışır)
+- [x] `app/lib/shop.ts`: LA-xxxxx / e-posta ile mock mağaza araması;
+      iş-günü hesabıyla don't-panic eşiği (AB 5 / dışı 12); delivered +
+      "gelmedi" → insan yönlendirme talimatı
+- [x] Korkuluk ön-kontrolü: bayraklı siparişte **model hiç çağrılmaz** —
+      route içinde erken dönüş + eskalasyon kaydı (curl testi: fraud_risk
+      → redirect + escalations.json ✓)
+- [x] `app/lib/escalate.ts`: Gorgias simülasyonu + Slack + yerel log;
+      model kaynaklı redirect'ler de buraya düşer
+- [x] Model `ORDERSENSE_MODEL ?? claude-sonnet-5`; **taban prefill'i
+      söküldü** (güncel modellerde 400); `ORDERSENSE_MOCK=1` deterministik
+      yanıt — policy/sipariş/korkuluk yolları curl'le doğrulandı
+- [x] Sistem promptu: Loura personası, EN/DE/FR, sert kurallar (iade sözü
+      yok, yalnız ORDER CONTEXT gerçekleri)
 
 **v2 — ölçüm + entegrasyon**
 - [ ] Test konuşma seti (20+): doğru sipariş bulma, korkuluk ihlali 0,
