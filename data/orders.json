@@ -1,0 +1,10 @@
+{
+  "_comment": "Mock Shopify store (fictional). Lookup by email or order number. Guardrail flags: fraud_risk, refunded, cancelled.",
+  "orders": [
+    { "orderNumber": "LA-10482", "email": "anna.keller@example.com", "name": "Anna Keller", "status": "in_transit", "carrier": "DHL", "trackingState": "arrival scan — Leipzig hub", "placedAt": "2026-08-24", "country": "DE", "items": ["Relaxed Linen Shirt — M"], "total": "€96.00", "flags": [] },
+    { "orderNumber": "LA-10495", "email": "marie.dubois@example.com", "name": "Marie Dubois", "status": "delivered", "carrier": "Colissimo", "trackingState": "delivered — signed", "placedAt": "2026-08-18", "country": "FR", "items": ["Tailored Wool Trousers — 38"], "total": "€139.00", "flags": [] },
+    { "orderNumber": "LA-10501", "email": "j.devries@example.com", "name": "Jan de Vries", "status": "processing", "carrier": null, "trackingState": null, "placedAt": "2026-08-29", "country": "NL", "items": ["Boxy Tee — L", "Canvas Tote"], "total": "€74.00", "flags": [] },
+    { "orderNumber": "LA-10466", "email": "flag.fraud@example.com", "name": "F. Test", "status": "on_hold", "carrier": null, "trackingState": null, "placedAt": "2026-08-22", "country": "DE", "items": ["Relaxed Linen Shirt — S"], "total": "€48.00", "flags": ["fraud_risk"] },
+    { "orderNumber": "LA-10450", "email": "refunded@example.com", "name": "R. Test", "status": "refunded", "carrier": "DHL", "trackingState": "returned to sender", "placedAt": "2026-08-10", "country": "DE", "items": ["Tailored Blazer — 40"], "total": "€189.00", "flags": ["refunded"] }
+  ]
+}
