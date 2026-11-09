@@ -22,7 +22,11 @@ still plays nicely with the existing Gorgias inbox.
 
 ## Status
 
-Skeleton — scope and measurement protocol in `docs/spec.md`.
+v1 demo. Order lookup, the guardrails (flagged, refunded or cancelled orders
+never reach the model), the local knowledge base and the escalation path run
+end to end in mock mode. The chat UI still carries the quickstart's look.
+Next: a 20+ conversation test set with a real model; scope and measurement
+protocol in `docs/spec.md`.
 
 ## License
 
