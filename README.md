@@ -1,3 +1,5 @@
+Demo project built to show what I can build. Not a client project.
+
 # OrderSense
 
 **A support agent the brand owns.** Answers order-status, returns and sizing

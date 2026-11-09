@@ -38,3 +38,12 @@ next-env.d.ts
 # OrderSense
 data/out/
 .env.local
+
+# GitHub prep
+dist
+.turbo
+.env
+.env.*
+!.env.example
+*.key
+*.log
